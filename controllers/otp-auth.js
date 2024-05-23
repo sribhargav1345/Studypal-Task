@@ -5,46 +5,54 @@ const User = require("../models/User");
 
 router.post('/request-otp', async (req, res) => {
 
-    const { phone_number } = req.body;
-    const code = "+91";
-    
+    const { phone_number } = req.body;                                           // We will get phone_number from the frontend
+
     try {
-        const otp = Math.floor(1000 + Math.random() * 9000).toString();
+        const otp = Math.floor(1000 + Math.random() * 9000).toString();          // I am generating 4-digit OTP
 
-        const url = `https://api.authkey.io/request?authkey=${process.env.AUTHKEY_API_KEY}&mobile=${phone_number}&country_code=${code}&sid=1001&name=Twinkle&otp=${otp}`;
-
-        console.log(otp);
-        console.log(process.env.AUTHKEY_API_KEY);
+        const url = `https://www.fast2sms.com/dev/bulkV2`;
 
         const response = await fetch(url, {
-            method: 'GET',
+            method: 'POST',
             headers: {
+                'authorization': process.env.FAST2SMS_API_KEY,
                 'Content-Type': 'application/json'
-            }
+            },
+            body: JSON.stringify({
+                route: 'otp',
+                variables_values: otp,
+                flash: 0,
+                numbers: phone_number
+            })
         });
 
-        const responseData = await response.json();
-        console.log(responseData);
+        const result = await response.json();
+        //console.log(result);
 
-        if (responseData.status === 'SUCCESS') {
-            const user = await User.findOneAndUpdate(
+        if (result.return) {
+
+            const user = await User.findOneAndUpdate(                           // For phone number, I am creating an otp, which is available for 45 seconds only
                 { phone_number },
-                { otp, otpExpires: new Date(Date.now() + 30 * 1000) },
+                { otp, otpExpires: new Date(Date.now() + 45*1000) },            // OTP expires in 45 seconds.
                 { upsert: true, new: true }
             );
 
             res.status(200).json({ message: 'OTP sent successfully' });
-        } else {
+        } 
+        else {
+            console.log(result.json);
             res.status(500).json({ message: 'Failed to send OTP' });
         }
 
-    } catch (error) {
-        console.error(error);
+    } 
+    catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }
 });
 
+
 router.post('/verify-otp', async (req, res) => {
+
     const { phoneNumber, otp } = req.body;
 
     try {
@@ -55,21 +63,21 @@ router.post('/verify-otp', async (req, res) => {
         }
 
         if (user.otp !== otp) {
-            return res.status(400).json({ message: 'Invalid OTP' });
+            return res.status(400).json({ message: 'OTP is Invalid' });
         }
 
         if (user.otpExpires < new Date()) {
             return res.status(400).json({ message: 'OTP expired' });
         }
 
-        user.otp = null;
+        user.otp = null;                                                        // Removing otp values that are stored with that phone number in database
         user.otpExpires = null;
 
         await user.save();
 
         res.status(200).json({ message: 'OTP verified successfully' });
-    } catch (error) {
-        console.error(error);
+    }
+    catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }
 });
